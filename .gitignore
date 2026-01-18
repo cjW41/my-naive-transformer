@@ -1,1 +1,10 @@
 .vscode/
+**/.ipynb_checkpoints
+**/__pycache__
+
+# ignore any content in any data dir. keep the data dir.
+**/data/*
+!**/data/
+
+# ignore any test.py file
+**/test.py
