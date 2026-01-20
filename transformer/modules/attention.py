@@ -19,8 +19,9 @@ def self_attention(
     self attention
 
     Arguments:
-        q,k,v: QKV tensor of shape (batch, head, seq, d_qk/d_v)
-        mask: boolean mask tensor of shape `(seq, seq)`. mask rule: `True -> mask`
+        q,k,v: QKV tensor of shape `(batch, head, seq, d_qk/d_v)`
+        mask: boolean mask tensor `(seq, seq)`.
+              boolean mask rule: `True -> mask`.
         d_scale: dimension of K to scale attention score
         dropout: dropout ratio
     """
@@ -77,9 +78,9 @@ class MultiHeadAttention(nn.Module):
         self.d_h = d_model // head
         self.dropout = dropout
 
-        self.Wq = nn.Linear(d_model, d_model, device=device)
-        self.Wk = nn.Linear(d_model, d_model, device=device)
-        self.Wv = nn.Linear(d_model, d_model, device=device)
+        self.Wq = nn.Linear(d_model, d_model, bias=False, device=device)
+        self.Wk = nn.Linear(d_model, d_model, bias=False, device=device)
+        self.Wv = nn.Linear(d_model, d_model, bias=False, device=device)
         self.norm = nn.LayerNorm(normalized_shape=self.d_model, device=device)
 
     def _multi_head_transform(self, inputs, d_h):
@@ -93,7 +94,7 @@ class MultiHeadAttention(nn.Module):
         Arguments:
             q_input: input tensor for Q `(batch, seq, d_model)`
             kv_input: input tensor for K,V `(batch, seq, d_model)`
-            mask: combination of padding mask and causal mask, boolean tensor (`False -> mask`)
+            mask: boolean mask for QK^T `(batch, 1, seq)` (broadcasting along 'column')
         """
         Q = self._multi_head_transform(self.Wq(q_input), d_h=self.d_h,)
         K = self._multi_head_transform(self.Wk(kv_input), d_h=self.d_h,)
