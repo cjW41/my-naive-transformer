@@ -1,4 +1,3 @@
-# encoder-decoder bone of Transformer models
 from .modules.ffn import DenseFFN
 from .modules.attention import MultiHeadAttention
 from .modules.positional_encoding import get_sinusoidal_pe_template, get_sinusoidal_pe
@@ -6,29 +5,6 @@ from .modules.positional_encoding import get_sinusoidal_pe_template, get_sinusoi
 import torch
 import torch.nn.functional as F
 from torch import nn
-from typing import Type, Any
-
-
-class EncoderDecoder:
-    """A simple Encoder-Decoder Skeleton"""
-    def __init__(self,
-                 encoder_class: Type,
-                 encoder_params: dict[str, Any],
-                 decoder_class: Type,
-                 decoder_params: dict[str, Any]):
-        super().__init__()
-        self.encoder = encoder_class(**encoder_params)
-        self.decoder = decoder_class(**decoder_params)
-
-    def encode(self, prompt, encoder_mask):
-        return self.encoder.encode(prompt, encoder_mask)
-    
-    def decode(self, target, decoder_mask, encoder_mask, encoded_prompt):
-        return self.decoder.decode(target, decoder_mask, encoder_mask, encoded_prompt)
-
-    @property
-    def num_params(self) -> int:
-        return self.encoder.num_params + self.decoder.num_params
 
 
 class TransformerEncoder:
@@ -41,7 +17,7 @@ class TransformerEncoder:
                  layers: int,
                  vocab_size: int,
                  d_model: int,
-                 head: int,
+                 n_h: int,
                  d_hidden_scale: int,
                  max_seq_len: int,
                  device: torch.device, dropout: float,):
@@ -56,9 +32,9 @@ class TransformerEncoder:
         self.layers = layers
         self.vocab_size = vocab_size
         self.d_model = d_model
-        self.head = head
+        self.n_h = n_h
         self.max_seq_len = max_seq_len
-        self.d_h = d_model // head  # d_model // head = d_h = d_qk
+        self.d_h = d_model // n_h  # d_model // head = d_h = d_qk
         self.div_term_template, self.token_position_template = get_sinusoidal_pe_template(d_model=d_model, max_seq_len=max_seq_len, device=device,)
         
         self.embedding = nn.Linear(vocab_size, d_model, bias=False, device=device)
@@ -67,7 +43,7 @@ class TransformerEncoder:
         for _ in range(layers):
             self.attention_blocks.append(
                 MultiHeadAttention(
-                    head=head,
+                    n_h=n_h,
                     d_model=d_model,
                     dropout=dropout,
                     device=device,
@@ -115,16 +91,16 @@ class TransformerDecoder:
                  layers: int,
                  vocab_size: int,
                  d_model: int,
-                 head: int,
+                 n_h: int,
                  d_hidden_scale: int,
                  max_seq_len: int,
                  device: torch.device, dropout: float,):
         self.layers = layers
         self.vocab_size = vocab_size
         self.d_model = d_model
-        self.head = head
+        self.n_h = n_h
         self.max_seq_len = max_seq_len
-        self.d_h = d_model // head  # d_model // head = d_h = d_qk
+        self.d_h = d_model // n_h  # commonly used by q,k,v
         self.div_term_template, self.token_position_template = get_sinusoidal_pe_template(d_model=d_model, max_seq_len=max_seq_len, device=device,)
 
         self.embedding = nn.Linear(vocab_size, d_model, bias=False, device=device)
@@ -134,7 +110,7 @@ class TransformerDecoder:
         for _ in range(layers):
             self.causal_masked_attention_blocks.append(
                 MultiHeadAttention(
-                    head=head,
+                    n_h=self.n_h,
                     d_model=d_model,
                     dropout=dropout,
                     device=device,
@@ -142,7 +118,7 @@ class TransformerDecoder:
             )
             self.cross_attention_blocks.append(
                 MultiHeadAttention(
-                    head=head,
+                    n_h=self.n_h,
                     d_model=d_model,
                     dropout=dropout,
                     device=device,
@@ -153,13 +129,19 @@ class TransformerDecoder:
                     d_input=d_model,
                     d_output=d_model,
                     d_hidden_size=d_hidden_scale * d_model,
-                    activation=nn.ReLU(),  # Original Transformer use ReLU
+                    activation=nn.ReLU(),  # Original Transformer use ReLU as activation
                     dropout=dropout, device=device,
                 )
             )
         self.output = nn.Linear(d_model, vocab_size, bias=False, device=device)
 
-    def decode(self, target, causal_mask, encoder_padding_mask, encoded_prompt):
+    def decode(
+        self,
+        target: torch.Tensor,
+        causal_mask: torch.Tensor,
+        encoder_padding_mask: torch.Tensor,
+        encoded_prompt: torch.Tensor
+    ) -> torch.Tensor:
         """
         Decode probability distribution for the next token with encoded_prompt and previously decoded sequence.
 
@@ -170,10 +152,12 @@ class TransformerDecoder:
             encoder_padding_mask: Mask the padding tokens in inputs prompts when input sequences differs in length.
             encoded_prompt: output of Transformer encoder
         """
-        pe = get_sinusoidal_pe(seq_len=target.shape[1],
-                               d_model=self.d_model,
-                               token_position=self.token_position_template,
-                               div_term=self.div_term_template)
+        pe = get_sinusoidal_pe(
+            seq_len=target.shape[1],
+            d_model=self.d_model,
+            token_position=self.token_position_template,
+            div_term=self.div_term_template
+        )
         x = self.embedding(target) + pe
         for causal_att, cross_att, ffn in zip(
             self.causal_masked_attention_blocks,
@@ -197,43 +181,56 @@ class TransformerDecoder:
         return num_embedding + self.layers * (causal_att.num_params + cross_att.num_params + ffn.num_params) + num_prob_casting
 
 
-def Transformer(
-    d_model: int,
-    head: int,
-    max_seq_len: int,
-    d_hidden_scale: int,
-    encoder_layers: int,
-    encoder_vocab_size: int,
-    decoder_layers: int,
-    decoder_vocab_size: int,
-    device: torch.device, dropout: float,
-) -> EncoderDecoder:
+class Transformer:
     """
     Transformer according to Attention is All You Need
     https://arxiv.org/abs/1706.03762
     """
-    return EncoderDecoder(
-        encoder_class=TransformerEncoder,
-        encoder_params={
-            "layers": encoder_layers,
-            "vocab_size": encoder_vocab_size,
-            "d_model": d_model,
-            "head": head,
-            "d_hidden_scale": d_hidden_scale,
-            "max_seq_len": max_seq_len,
-            "device": device,
-            "dropout": dropout
-        },
-        decoder_class=TransformerDecoder,
-        decoder_params={
-            "layers": decoder_layers,
-            "vocab_size": decoder_vocab_size,
-            "d_model": d_model,
-            "head": head,
-            "d_hidden_scale": d_hidden_scale,
-            "max_seq_len": max_seq_len,
-            "device": device,
-            "dropout": dropout,
-        },
-    )
+    def __init__(self,
+                 d_model: int,
+                 n_h: int,
+                 d_hidden_scale: int,
+                 encoder_layers: int,
+                 encoder_vocab_size: int,
+                 encoder_max_seq_len: int, 
+                 decoder_layers: int,
+                 decoder_vocab_size: int,
+                 decoder_max_seq_len: int,
+                 device: torch.device,
+                 dropout: float,):
+        self.encoder = TransformerEncoder(
+            layers=encoder_layers,
+            vocab_size=encoder_vocab_size,
+            d_model=d_model,
+            n_h=n_h,
+            d_hidden_scale=d_hidden_scale,
+            max_seq_len=encoder_max_seq_len,
+            device=device, dropout=dropout,
+        )
+        self.decoder = TransformerDecoder(
+            layers=decoder_layers,
+            vocab_size=decoder_vocab_size,
+            d_model=d_model,
+            n_h=n_h,
+            d_hidden_scale=d_hidden_scale,
+            max_seq_len=decoder_max_seq_len,
+            device=device, dropout=dropout,
+        )
+    
+    @property
+    def num_params(self) -> int:
+        return self.encoder.num_params + self.decoder.num_params
 
+    def get_causal_mask(self, dim: int):
+        """
+        boolean mask rule: `True -> mask`.
+        return shape `(1, 1, seq, seq)`, broadcasting along batch&head dim
+        """
+        inversed_mask = torch.tril(torch.ones((dim, dim), dtype=torch.bool))  # False -> mask
+        return ~inversed_mask  # True -> mask
+
+    def encode(self, prompt, padding_mask) -> torch.Tensor:
+        return self.encoder.encode(prompt, padding_mask)
+
+    def decode(self, target, causal_mask, encoder_padding_mask, encoded_prompt) -> torch.Tensor:
+        return self.decoder.decode(target, causal_mask, encoder_padding_mask, encoded_prompt)
