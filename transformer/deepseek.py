@@ -142,9 +142,9 @@ class DeepSeek(nn.Module):
             discrete distribution of next token `(batch, seq, vocab_size)`
         """
         x = self.embedding(inputs)
-        for mla, moe in zip(self.attention_blocks, self.ffn_blocks):
+        for mla, ffn in zip(self.attention_blocks, self.ffn_blocks):
             h = mla(x, mask)
-            x = moe(h)
+            x = ffn(h)
         return self.linear_outout(self.final_norm(x))
 
     @property

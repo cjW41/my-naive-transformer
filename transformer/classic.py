@@ -18,6 +18,8 @@ class TransformerEncoder:
                  vocab_size: int,
                  d_model: int,
                  n_h: int,
+                 d_qk: int,
+                 d_v: int,
                  d_hidden_scale: int,
                  max_seq_len: int,
                  device: torch.device, dropout: float,):
@@ -43,16 +45,14 @@ class TransformerEncoder:
         for _ in range(layers):
             self.attention_blocks.append(
                 MultiHeadAttention(
-                    n_h=n_h,
+                    n_h=n_h, d_qk=d_qk, d_v=d_v,
                     d_model=d_model,
-                    dropout=dropout,
-                    device=device,
+                    dropout=dropout, device=device,
                 )
             )
             self.ffn_blocks.append(
                 DenseFFN(
-                    d_input=d_model,
-                    d_output=d_model,
+                    d_input=d_model, d_output=d_model,
                     d_hidden_size=d_hidden_scale * d_model,
                     activation=nn.ReLU(),  # Original Transformer use ReLU
                     dropout=dropout, device=device,
@@ -92,6 +92,8 @@ class TransformerDecoder:
                  vocab_size: int,
                  d_model: int,
                  n_h: int,
+                 d_qk: int,
+                 d_v: int,
                  d_hidden_scale: int,
                  max_seq_len: int,
                  device: torch.device, dropout: float,):
@@ -99,6 +101,8 @@ class TransformerDecoder:
         self.vocab_size = vocab_size
         self.d_model = d_model
         self.n_h = n_h
+        self.d_qk = d_qk
+        self.d_v = d_v
         self.max_seq_len = max_seq_len
         self.d_h = d_model // n_h  # commonly used by q,k,v
         self.div_term_template, self.token_position_template = get_sinusoidal_pe_template(d_model=d_model, max_seq_len=max_seq_len, device=device,)
@@ -110,24 +114,21 @@ class TransformerDecoder:
         for _ in range(layers):
             self.causal_masked_attention_blocks.append(
                 MultiHeadAttention(
-                    n_h=self.n_h,
+                    n_h=self.n_h, d_qk=self.d_qk, d_v=self.d_v,
                     d_model=d_model,
-                    dropout=dropout,
-                    device=device,
+                    dropout=dropout, device=device,
                 )
             )
             self.cross_attention_blocks.append(
                 MultiHeadAttention(
-                    n_h=self.n_h,
+                    n_h=self.n_h, d_qk=self.d_qk, d_v=self.d_v,
                     d_model=d_model,
-                    dropout=dropout,
-                    device=device,
+                    dropout=dropout, device=device,
                 )
             )
             self.ffn_blocks.append(
                 DenseFFN(
-                    d_input=d_model,
-                    d_output=d_model,
+                    d_input=d_model, d_output=d_model,
                     d_hidden_size=d_hidden_scale * d_model,
                     activation=nn.ReLU(),  # Original Transformer use ReLU as activation
                     dropout=dropout, device=device,
@@ -189,6 +190,8 @@ class Transformer:
     def __init__(self,
                  d_model: int,
                  n_h: int,
+                 d_qk: int,
+                 d_v: int,
                  d_hidden_scale: int,
                  encoder_layers: int,
                  encoder_vocab_size: int,
@@ -202,7 +205,7 @@ class Transformer:
             layers=encoder_layers,
             vocab_size=encoder_vocab_size,
             d_model=d_model,
-            n_h=n_h,
+            n_h=n_h, d_qk=d_qk, d_v=d_v,
             d_hidden_scale=d_hidden_scale,
             max_seq_len=encoder_max_seq_len,
             device=device, dropout=dropout,
@@ -211,7 +214,7 @@ class Transformer:
             layers=decoder_layers,
             vocab_size=decoder_vocab_size,
             d_model=d_model,
-            n_h=n_h,
+            n_h=n_h, d_qk=d_qk, d_v=d_v,
             d_hidden_scale=d_hidden_scale,
             max_seq_len=decoder_max_seq_len,
             device=device, dropout=dropout,

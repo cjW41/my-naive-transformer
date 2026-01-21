@@ -65,31 +65,34 @@ class MultiHeadAttention(nn.Module):
     """classic multi-head attention with RoPE support"""
     def __init__(self,
                  n_h: int,
+                 d_qk: int,
+                 d_v: int,
                  d_model: int,
                  dropout: float,
                  device: torch.device,
                  use_rope: bool = False,
                  precompute_cis: torch.Tensor | None = None,):
-        assert d_model % n_h == 0
         super().__init__()
+        # Dimension of QKV:
+        # qk must have same dim for dot-product. v can have a different dim.
+        # it is recommended to set `d_v = d_qk = d_model/n_h`
         self.n_h = n_h
+        self.d_qk = d_qk          
+        self.d_v = d_v            
         self.d_model = d_model
-        self.d_h = d_model // n_h
         self.dropout = dropout
         self.use_rope = use_rope
         self.precompute_cis = precompute_cis
 
-        self.Wq = nn.Linear(d_model, d_model, bias=False, device=device)
-        self.Wk = nn.Linear(d_model, d_model, bias=False, device=device)
-        self.Wv = nn.Linear(d_model, d_model, bias=False, device=device)
+        self.Wq = nn.Linear(d_model, n_h*d_qk, bias=False, device=device)
+        self.Wk = nn.Linear(d_model, n_h*d_qk, bias=False, device=device)
+        self.Wv = nn.Linear(d_model, n_h*d_v, bias=False, device=device)
+        self.Wo = nn.Linear(n_h*d_v, d_model, bias=False, device=device)  # restore shape, mix output of heads
         self.norm = nn.LayerNorm(normalized_shape=self.d_model, device=device)
 
-    def _multi_head_transform(self, inputs):
-        """
-        proprietary version of multi_head_transform.
-        dim of QKV in one head are all set to `d_h = d_model/n_h`
-        """
-        return multi_head_transform(inputs, inputs.shape[0], n_h=self.n_h, d_h=self.d_h)
+    def _multi_head_transform(self, inputs, d_h):
+        """proprietary version of multi_head_transform"""
+        return multi_head_transform(inputs, inputs.shape[0], n_h=self.n_h, d_h=d_h)
 
     def forward(
         self,
@@ -105,16 +108,16 @@ class MultiHeadAttention(nn.Module):
             kv_input: input tensor for K,V `(batch, seq, d_model)`
             mask: boolean mask for QK^T `(batch, 1, seq)` (broadcasting along 'column')
         """
-        Q = self._multi_head_transform(self.Wq(q_input))
-        K = self._multi_head_transform(self.Wk(kv_input))
-        V = self._multi_head_transform(self.Wv(kv_input))
+        Q = self._multi_head_transform(self.Wq(q_input), d_h=self.d_qk)
+        K = self._multi_head_transform(self.Wk(kv_input), d_h=self.d_qk)
+        V = self._multi_head_transform(self.Wv(kv_input), d_h=self.d_v)
         if self.use_rope:
             assert self.precompute_cis is not None
             Q = RoPE(Q, self.precompute_cis, seq_len=Q.shape[1])
             K = RoPE(K, self.precompute_cis, seq_len=Q.shape[1])
-        output = self_attention(Q, K, V, d_scale=self.d_h, mask=mask, dropout=self.dropout)
-        output = merge_heads(output)
-        return self.norm(output + q_input)  # add & norm
+        output = self_attention(Q, K, V, d_scale=self.d_v, mask=mask, dropout=self.dropout)  # (batch, seq, n_h*d_v)
+        output = self.Wo(merge_heads(output))  # (..., n_h*d_v) -> (..., d_model)
+        return self.norm(output + q_input)     # add & norm
 
     @property
     def num_params(self) -> int:
@@ -230,3 +233,17 @@ class MLA(nn.Module):
                 + self.d_model * self.d_h_R
                 + self.d_c_kv * self.d_model
                 + self.d_h * self.n_h * self.d_model)
+
+
+class GQA(nn.Module):
+    pass
+
+
+class GDA(nn.Module):
+    """Gated Delta Attention of Qwen-Next"""
+    pass
+
+
+class KDA(nn.Module):
+    """Kimi Delta Attention of Kimi-Linear"""
+    pass

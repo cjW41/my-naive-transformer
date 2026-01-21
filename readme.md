@@ -20,5 +20,5 @@
 ## 3. TODO List
 1. rebuild kv_cache modules in `transformer.module`
 2. add `DeepSeek-V3.2` to `transformer.deepseek`
-3. replicate `Qwen` model familiy
+3. replicate linear attention
 4. `GRPO` for LLMs
