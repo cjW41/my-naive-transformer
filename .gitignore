@@ -8,3 +8,6 @@
 
 # ignore any test.py file
 **/test.py
+
+# ignore images
+images/

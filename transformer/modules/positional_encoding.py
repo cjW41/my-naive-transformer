@@ -23,20 +23,20 @@ def get_precompute_cis(
     return freqs_cis                                         # [max_seq_len, d_qk/2]   eg: [128, 32]
 
 
-def RoPE(qk: torch.Tensor, precompute_cis: torch.Tensor, seq_len: int) -> torch.Tensor:
+def RoPE(qk: torch.Tensor, precompute_cis: torch.Tensor,) -> torch.Tensor:
     """
     知乎版本 https://zhuanlan.zhihu.com/p/684666015
 
     Arguments:
-        qk: Q,K vector
+        qk:             Q,K vector
         precompute_cis: complex frequency template
-        seq_len: current length of sequence
-    
+
     Returns:
         rotated q, k
     """
+    seq, d_h = qk.shape[-2], qk.shape[-1]
     qk_ = torch.view_as_complex(qk.reshape(*qk.shape[:-1], -1, 2))   # 变成复数后最后一个维度减半了，因为相邻两个元素组成了一个复数
-    freqs_cis = precompute_cis[:seq_len].view(1, 1, *qk_.shape[2:])  # first 2 dim: batch_size, head
+    freqs_cis = precompute_cis[:seq, : int(d_h / 2)].reshape(1, 1, *qk_.shape[2:])  # first 2 dim: batch_size, head
     rotated_qk = qk_ * freqs_cis.cuda()
     return torch.view_as_real(rotated_qk).flatten(-2)                # 还原形状，把复数表示全部还原成了实数
 
@@ -57,9 +57,8 @@ def get_sinusoidal_pe_template(
     freq = torch.arange(0, d_model, 2) / d_model
     div_term = torch.empty((d_model,))
     div_term = 1 / torch.pow(base, freq)
-    div_term.to(device=device)
-    token_position = torch.arange(max_seq_len, device=device)
-    return div_term, token_position
+    token_position = torch.arange(max_seq_len)
+    return div_term.to(device=device), token_position.to(device=device)
 
 
 def get_sinusoidal_pe(
@@ -73,8 +72,8 @@ def get_sinusoidal_pe(
     
     return shape: `(seq_len, d_model)`
     """
-    pe = torch.empty((seq_len, d_model))
-    outer_product = torch.outer(token_position, div_term)  # (seq_len, d_model/2)
+    pe = torch.empty((seq_len, d_model), device=token_position.device)
+    outer_product = torch.outer(token_position[:seq_len], div_term)  # (seq_len, d_model/2)
     pe[:, 0::2] = torch.sin(outer_product)
     pe[:, 1::2] = torch.cos(outer_product)
     return pe

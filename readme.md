@@ -1,12 +1,10 @@
-# Naively Replicated Transformers
+# Some Naive Replication of Transformer
 
 ## 1. Current Works
-- `kv_cache_test`
-    - [**deprecated**] kv-cache for classic Transformer. waiting for merging into `transformer`.
 - `transformer`
-    - [**debugging**] the classic Transformer according to [*Attention is All You Need*](https://arxiv.org/abs/1706.03762)
-    - [**debugging**] DeepSeek-V2 according to [*DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model*](https://arxiv.org/abs/2405.04434)
-    - [**debugging**] DeepSeek-V3 according to [*DeepSeek-V3 Technical Report*](https://arxiv.org/abs/2412.19437)
+    - the classic Transformer according to [*Attention is All You Need*](https://arxiv.org/abs/1706.03762)
+    - DeepSeek-V2 according to [*DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model*](https://arxiv.org/abs/2405.04434)
+    - DeepSeek-V3 according to [*DeepSeek-V3 Technical Report*](https://arxiv.org/abs/2412.19437)
 
 ## 2. Modules
 - `.modules`: building blocks
@@ -18,7 +16,4 @@
 - `.classic`: Classic models like BERT, Transformer.
 
 ## 3. TODO List
-1. rebuild kv_cache modules in `transformer.module`
-2. add `DeepSeek-V3.2` to `transformer.deepseek`
-3. replicate linear attention
-4. `GRPO` for LLMs
+1. model with linear attention

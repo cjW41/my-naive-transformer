@@ -36,7 +36,7 @@ class TransformerEncoder:
         self.d_model = d_model
         self.n_h = n_h
         self.max_seq_len = max_seq_len
-        self.d_h = d_model // n_h  # d_model // head = d_h = d_qk
+        self.d_h = d_model // n_h       # d_model // head = d_h = d_qk
         self.div_term_template, self.token_position_template = get_sinusoidal_pe_template(d_model=d_model, max_seq_len=max_seq_len, device=device,)
         
         self.embedding = nn.Linear(vocab_size, d_model, bias=False, device=device)
@@ -73,7 +73,7 @@ class TransformerEncoder:
                                div_term=self.div_term_template)
         x = self.embedding(prompt) + pe
         for att, ffn in zip(self.attention_blocks, self.ffn_blocks):
-            x = att(x, x, mask)  # q_input = kv_input = x
+            x = att(x, x, mask)     # q_input = kv_input = x
             x = ffn(x)
         return x
 
@@ -104,7 +104,7 @@ class TransformerDecoder:
         self.d_qk = d_qk
         self.d_v = d_v
         self.max_seq_len = max_seq_len
-        self.d_h = d_model // n_h  # commonly used by q,k,v
+        self.d_h = d_model // n_h       # commonly used by q,k,v
         self.div_term_template, self.token_position_template = get_sinusoidal_pe_template(d_model=d_model, max_seq_len=max_seq_len, device=device,)
 
         self.embedding = nn.Linear(vocab_size, d_model, bias=False, device=device)
@@ -130,7 +130,7 @@ class TransformerDecoder:
                 DenseFFN(
                     d_input=d_model, d_output=d_model,
                     d_hidden_size=d_hidden_scale * d_model,
-                    activation=nn.ReLU(),  # Original Transformer use ReLU as activation
+                    activation=nn.ReLU(),           # Original Transformer use ReLU as activation
                     dropout=dropout, device=device,
                 )
             )
@@ -141,7 +141,8 @@ class TransformerDecoder:
         target: torch.Tensor,
         causal_mask: torch.Tensor,
         encoder_padding_mask: torch.Tensor,
-        encoded_prompt: torch.Tensor
+        encoded_prompt: torch.Tensor,
+        return_logits: bool,
     ) -> torch.Tensor:
         """
         Decode probability distribution for the next token with encoded_prompt and previously decoded sequence.
@@ -165,12 +166,12 @@ class TransformerDecoder:
             self.cross_attention_blocks,
             self.ffn_blocks
         ):
-            x = causal_att(x, x, causal_mask)  # q_input = kv_input = x
+            x = causal_att(x, x, causal_mask)                       # q_input = kv_input = x
             x = cross_att(x, encoded_prompt, encoder_padding_mask)  # q_input = x, kv_input = encoded_prompt
             x = ffn(x)
 
         logits = self.output(x)
-        return F.softmax(logits)
+        return logits if return_logits else F.softmax(logits, dim=-1)
 
     @property
     def num_params(self) -> int:
@@ -224,16 +225,16 @@ class Transformer:
     def num_params(self) -> int:
         return self.encoder.num_params + self.decoder.num_params
 
-    def get_causal_mask(self, dim: int):
+    def get_causal_mask(self, seq: int):
         """
         boolean mask rule: `True -> mask`.
         return shape `(1, 1, seq, seq)`, broadcasting along batch&head dim
         """
-        inversed_mask = torch.tril(torch.ones((dim, dim), dtype=torch.bool))  # False -> mask
+        inversed_mask = torch.tril(torch.ones((seq, seq), dtype=torch.bool))  # False -> mask
         return ~inversed_mask  # True -> mask
 
     def encode(self, prompt, padding_mask) -> torch.Tensor:
         return self.encoder.encode(prompt, padding_mask)
 
-    def decode(self, target, causal_mask, encoder_padding_mask, encoded_prompt) -> torch.Tensor:
-        return self.decoder.decode(target, causal_mask, encoder_padding_mask, encoded_prompt)
+    def decode(self, target, causal_mask, encoder_padding_mask, encoded_prompt, return_logits: bool = False) -> torch.Tensor:
+        return self.decoder.decode(target, causal_mask, encoder_padding_mask, encoded_prompt, return_logits)

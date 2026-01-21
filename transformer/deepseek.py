@@ -6,14 +6,13 @@ import torch
 from torch import nn
 from typing import Literal
 
-
 class DeepSeek(nn.Module):
     """
     `DeepSeek-V` family
 
-    - `DeepSeek-V2`: https://arxiv.org/abs/2405.04434
-    - `DeepSeek-V3`: https://arxiv.org/abs/2412.19437
-    - `DeepSeek-V3.2`: https://arxiv.org/abs/2512.02556
+    DeepSeek-V2:   https://arxiv.org/abs/2405.04434
+    DeepSeek-V3:   https://arxiv.org/abs/2412.19437
+    DeepSeek-V3.2: https://arxiv.org/abs/2512.02556
     """
     def __init__(self,
                  ver: Literal["V2", "V3", "V3.2"],
@@ -29,7 +28,6 @@ class DeepSeek(nn.Module):
                  d_h:int,
                  d_c_q: int,
                  d_c_kv: int,
-                 d_h_R: int,
                  d_hidden_dense: int = -1,
                  d_hidden_expert: int = -1,
                  n_shared_expert: int,
@@ -47,9 +45,9 @@ class DeepSeek(nn.Module):
         
         Attention Params:
             n_h:          number of heads in MLA
+            d_h:          dim of the input into attention head
             d_c_q:        dim of latent vector for Q
             d_c_kv:       dim of latent vector for KV
-            d_h_R:        dim of concatenated RoPE vector
         
         MoE Params:
             d_hidden_expert:          hidden layer dim of each expert
@@ -59,9 +57,10 @@ class DeepSeek(nn.Module):
         """
         assert (dense_layers > 0 and d_hidden_dense > 0) or (moe_layers > 0 and d_hidden_expert > 0)
         if ver == "V3.2":
-            raise NotImplementedError("DSA is not Ready yet")
-
+            raise NotImplementedError("DSA not implemented")
+        
         super().__init__()
+        self.ver = ver
         self.dense_layers = dense_layers
         self.moe_layers = moe_layers
         self.vocab_size = vocab_size
@@ -73,7 +72,7 @@ class DeepSeek(nn.Module):
         self.d_h = d_h
         self.d_c_q = d_c_q
         self.d_c_kv = d_c_kv
-        self.d_h_R = d_h_R
+
         self.d_hidden_dense = d_hidden_dense
         self.d_hidden_expert = d_hidden_expert
         self.n_shared_expert = n_shared_expert
@@ -87,48 +86,42 @@ class DeepSeek(nn.Module):
         if self.dense_layers > 0:
             for _ in range(self.dense_layers):
                 self.attention_blocks.append(
-                    MLA(ver=ver,
-                        d_model=d_model,
+                    MLA(d_model=d_model,
                         n_h=n_h, d_h=d_h,
                         d_c_q=d_c_q, d_c_kv=d_c_kv,
-                        d_h_R=d_h_R,
                         max_seq_len=max_seq_len,
                         precompute_cis=precompute_cis,
                         dropout=dropout, device=device,)
                 )
                 self.ffn_blocks.append(
-                    DenseFFN(
-                        d_input=d_model,
-                        d_output=d_model,
-                        d_hidden_size=d_hidden_dense,
-                        device=device, dropout=dropout
-                    )
+                    DenseFFN(d_input=d_model,
+                             d_output=d_model,
+                             d_hidden_size=d_hidden_dense,
+                             device=device, dropout=dropout,)
                 )
         # add layers with MoE
         if self.moe_layers > 0:
             for _ in range(self.moe_layers):
                 self.attention_blocks.append(
-                    MLA(ver=ver,
-                        d_model=d_model,
+                    MLA(d_model=d_model,
                         n_h=n_h, d_h=d_h,
                         d_c_q=d_c_q, d_c_kv=d_c_kv,
-                        d_h_R=d_h_R,
                         max_seq_len=max_seq_len,
                         precompute_cis=precompute_cis,
                         dropout=dropout, device=device,)
                 )
                 self.ffn_blocks.append(
-                    DeepSeekMoE(ver=ver,
-                                d_model=d_model,
-                                d_hidden_expert=d_hidden_expert,
+                    DeepSeekMoE(d_model=d_model,
+                                d_hidden=d_hidden_expert,
                                 n_shared_expert=n_shared_expert,
                                 n_routed_expert=n_routed_expert,
                                 n_routed_expert_activate=n_routed_expert_activate,
-                                dropout=dropout, device=device,)
+                                dropout=dropout, device=device,
+                                expert_bias = True if self.ver in ["V3", "V3.2"] else False,)
                 )
         self.embedding = nn.Linear(vocab_size, d_model, bias=False, device=device)
         self.final_norm = nn.RMSNorm(normalized_shape=d_model, device=device)
-        self.linear_outout = nn.Linear(d_model, vocab_size, bias=False)
+        self.linear_output = nn.Linear(d_model, vocab_size, bias=False, device=device)
     
     def forward(self, inputs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -136,7 +129,7 @@ class DeepSeek(nn.Module):
 
         Arguments:
             inputs: tokenized sequence `(batch, seq, vocab_size)`
-            mask: boolean padding mask `(batch, 1, 1, seq)`
+            mask:   boolean padding mask `(batch, 1, 1, seq)`
         
         Returns:
             discrete distribution of next token `(batch, seq, vocab_size)`
@@ -145,7 +138,7 @@ class DeepSeek(nn.Module):
         for mla, ffn in zip(self.attention_blocks, self.ffn_blocks):
             h = mla(x, mask)
             x = ffn(h)
-        return self.linear_outout(self.final_norm(x))
+        return self.linear_output(self.final_norm(x))
 
     @property
     def num_params(self) -> int:
@@ -178,7 +171,6 @@ class DeepSeek(nn.Module):
             d_h=128
             d_c_q = 1536
             d_c_kv = 512
-            d_h_R = 64
             d_hidden_expert = 1536
             n_shared_expert = 2
             n_routed_expert = 160
@@ -197,7 +189,6 @@ class DeepSeek(nn.Module):
             "d_h": 128,
             "d_c_q": 1536,
             "d_c_kv": 512,
-            "d_h_R": 64,
             "d_hidden_expert": 1536,
             "n_shared_expert": 2,
             "n_routed_expert": 160,
@@ -223,7 +214,6 @@ class DeepSeek(nn.Module):
             d_h=128
             d_c_q = 1536
             d_c_kv = 512
-            d_h_R = 64
             d_hidden_dense = 18432          (new)
             d_hidden_expert = 2048          (1536 -> 2048)
             n_shared_expert = 1             (2 -> 1) 
@@ -243,7 +233,6 @@ class DeepSeek(nn.Module):
             "d_h": 128,
             "d_c_q": 1536,
             "d_c_kv": 512,
-            "d_h_R": 64,
             "d_hidden_dense": 18432,
             "d_hidden_expert": 2048,
             "n_shared_expert": 1,
