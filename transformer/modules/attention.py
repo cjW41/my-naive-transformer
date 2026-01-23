@@ -224,10 +224,7 @@ class MLA(nn.Module):
 
 
 class GDA(nn.Module):
-    """Gated Delta Attention of Qwen-Next"""
+    """Gated Delta Attention"""
     pass
 
 
-class KDA(nn.Module):
-    """Kimi Delta Attention of Kimi-Linear"""
-    pass

@@ -11,7 +11,7 @@ class TransformerEncoder:
     """
     classic Transformer Encoder from *Attention is All You Need*
     
-    `d_model // head = d_h = d_qk`
+    `d_model // n_h = d_h = d_qk`
     """
     def __init__(self,
                  layers: int,
@@ -36,9 +36,10 @@ class TransformerEncoder:
         self.d_model = d_model
         self.n_h = n_h
         self.max_seq_len = max_seq_len
-        self.d_h = d_model // n_h       # d_model // head = d_h = d_qk
         self.div_term_template, self.token_position_template = get_sinusoidal_pe_template(d_model=d_model, max_seq_len=max_seq_len, device=device,)
         
+        # TransformerEncoder
+        #   embedding -> [attention -> FFN] x layers
         self.embedding = nn.Linear(vocab_size, d_model, bias=False, device=device)
         self.attention_blocks: list[MultiHeadAttention] = []
         self.ffn_blocks: list[DenseFFN] = []
@@ -107,6 +108,8 @@ class TransformerDecoder:
         self.d_h = d_model // n_h       # commonly used by q,k,v
         self.div_term_template, self.token_position_template = get_sinusoidal_pe_template(d_model=d_model, max_seq_len=max_seq_len, device=device,)
 
+        # TransformerDecoder:
+        #   embedding -> [causal_masked_attention -> cross_attention -> FFN] x layers -> output
         self.embedding = nn.Linear(vocab_size, d_model, bias=False, device=device)
         self.causal_masked_attention_blocks: list[MultiHeadAttention] = []
         self.cross_attention_blocks: list[MultiHeadAttention] = []
