@@ -128,17 +128,18 @@ class DeepSeek(nn.Module):
         boolean mask rule: `True -> mask`
 
         Arguments:
-            inputs: tokenized sequence `(batch, seq, vocab_size)`
-            mask:   boolean padding mask `(batch, 1, 1, seq)`
+            inputs: tokenized sequence (batch, seq, vocab_size)
+            mask:   boolean padding mask (batch, 1, 1, seq)
         
         Returns:
-            discrete distribution of next token `(batch, seq, vocab_size)`
+            next token logits (batch, seq, vocab_size)
         """
         x = self.embedding(inputs)
         for mla, ffn in zip(self.attention_blocks, self.ffn_blocks):
             h = mla(x, mask)
             x = ffn(h)
-        return self.linear_output(self.final_norm(x))
+        logits = self.linear_output(self.final_norm(x))
+        return logits
 
     @property
     def num_params(self) -> int:
