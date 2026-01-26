@@ -1,1 +1,0 @@
-# model with linear attention

@@ -12,7 +12,5 @@
     - `.attention`: Attention functions and modules.
     - `.ffn`: FFN and MoE modules.
     - `.positional_encoding`: Functions for generating positional encoding.
-- `.rl`: reinforcement learning of LLMs & LLM Agent
-- `.deepseek`: DeepSeek family
+- `.deepseek`: DeepSeek family.
 - `.classic`: Classic models like BERT, Transformer.
-- `.linear`: Model with linear attention

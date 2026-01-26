@@ -113,7 +113,7 @@ class MultiHeadAttention(nn.Module):
             assert self.precompute_cis is not None
             Q = RoPE(Q, self.precompute_cis,)
             K = RoPE(K, self.precompute_cis,)
-        output = self_attention(Q, K, V, d_scale=self.d_v, mask=mask, dropout=self.dropout)  # (batch, seq, n_h*d_v)
+        output = self_attention(Q, K, V, d_scale=self.d_qk, mask=mask, dropout=self.dropout)  # (batch, seq, n_h*d_v)
         output = self.Wo(merge_heads(output))  # (..., n_h*d_v) -> (..., d_model)
         return self.norm(output + q_input)     # add & norm
 
